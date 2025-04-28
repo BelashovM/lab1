@@ -6,11 +6,26 @@ import numpy as np
 import threading
 from PIL import Image
 import os
+import sdtfile
+from tkinter import filedialog
+
+from main import turn_sdt
+
+frame_times = None
 
 def show_video_with_frame_range_sum(sdt):
     window = tk.Toplevel()
     window.title("Просмотр каналов с диапазоном")
     window.configure(bg='black')
+
+    # Найти кадр с максимальной суммой пикселей
+    sums = []
+    for i in range(sdt.data[2].shape[2]):  # канал 2 (зелёный), можно поменять на нужный канал
+        frame_sum = np.sum(sdt.data[2][:, :, i])
+        sums.append(frame_sum)
+    brightest_frame = int(np.argmax(sums))  # номер самого яркого кадра
+    print(f"Самый яркий кадр: {brightest_frame} (сумма пикселей {sums[brightest_frame]})")
+
 
     top_frame = tk.Frame(window, bg='black')
     top_frame.pack(padx=10, pady=10)
@@ -20,6 +35,8 @@ def show_video_with_frame_range_sum(sdt):
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 6))
     fig.patch.set_facecolor('black')
+    label_info = tk.Label(top_frame, text="", bg='black', fg='white', font=("Arial", 14))
+    label_info.pack()
     for ax in axes:
         ax.set_facecolor('black')
         ax.tick_params(colors='white')
@@ -27,6 +44,13 @@ def show_video_with_frame_range_sum(sdt):
 
     canv = FigureCanvasTkAgg(fig, master=top_frame)
     canv.get_tk_widget().pack()
+
+    global frame_times
+    frame_times = sdt.times
+    frame_time=frame_times[0]
+    print(frame_time)
+    print(len(frame_time))
+    print(frame_time[brightest_frame].round(3)*10**9)
 
     total_frames = sdt.data[0].shape[2]
     center_frame = tk.IntVar(value=total_frames // 2)
@@ -87,11 +111,22 @@ def show_video_with_frame_range_sum(sdt):
             sum_0 = sum_2 = sum_combined = 0
 
         def update_gui():
-            for ax, img, title, handle, value in zip(
-                axes, [img_0, img_2, combined], titles, img_handles, [sum_0, sum_2, sum_combined]):
+            for ax, img, title, handle, value in zip(axes, [img_0, img_2, combined], titles, img_handles,
+                                                     [sum_0, sum_2, sum_combined]):
                 handle.set_data(img)
-                ax.set_title(f"{title}\nКадры: {start}-{end}\nСумма: {value:.0f}", color='white')
+                ax.set_title(
+                    f"{title}\nСумма: {value:.0f}",
+                    color='white'
+                )
                 ax.axis('off')
+
+            # Обновляем отдельный label_info (над графиками)
+            label_info.config(
+                text=(f"Кадры: {start}-{end}    "
+                      f"Время: {((frame_time[start] - frame_time[brightest_frame]) * 10 ** 9).round(1)}–{((frame_time[end] - frame_time[brightest_frame]) * 10 ** 9).round(1)} нс")
+            )
+
+            ax.axis('off')
             canv.draw()
 
         window.after(0, update_gui)
@@ -141,31 +176,27 @@ def show_video_with_frame_range_sum(sdt):
         except Exception as e:
             print(f"Ошибка при сохранении маски: {e}")
 
-    from tkinter import filedialog
-    import pickle  # или другой способ чтения файла, если это .sdt
-
     def open_new_file():
         file_path = filedialog.askopenfilename(filetypes=[("SDT files", "*.sdt"), ("All files", "*.*")])
         if not file_path:
             return
 
         try:
-            # 👇 Заменить на твой способ загрузки данных:
-            with open(file_path, "rb") as f:
-                new_sdt = pickle.load(f)  # или другой метод
+            # Загружаем файл с помощью класса SDTFile
+            sdt_data = turn_sdt(file_path)  # Используем SDTFile для загрузки данных
 
-            # Обновляем глобальный sdt
-            nonlocal sdt, total_frames
-            sdt = new_sdt
-            total_frames = sdt.data[0].shape[2]
+            # Теперь sdt_data содержит данные из файла, которые можно использовать
+            print(sdt_data.data)  # Печать данных (или обработка их как необходимо)
 
+            # Пример обработки данных
+            total_frames = sdt_data.data[0].shape[2]
             center_frame.set(total_frames // 2)
             center_slider.config(to=total_frames - 1)
             center_slider.set(center_frame.get())
             center_entry.delete(0, tk.END)
             center_entry.insert(0, str(center_frame.get()))
 
-            threaded_update()
+            threaded_update()  # вызов обновления графиков
 
         except Exception as e:
             print(f"Не удалось загрузить файл: {e}")
