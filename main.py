@@ -53,6 +53,8 @@ def process_frames(sdt, k, channels, fps, accumulate=False, suffix="", filename_
 
         for ch, color in channels.items():
             raw = np.array(sdt.data[ch][:, :, frame_idx], dtype=np.float32)
+            raw = np.flip(raw, axis=0)  # <--- Переворот изображения по вертикали
+
             if accumulate:
                 accumulation_buffers[ch] += raw
                 accumulation_count[ch] += 1

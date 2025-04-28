@@ -1,10 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import filedialog, ttk, messagebox
 import threading
 import os
-import imageio.v2 as imageio
-from main import process_frames, create_six_panel_video, turn_sdt
 import webbrowser
+from main import turn_sdt, process_frames, create_six_panel_video
+import viewer  # должен быть viewer.py с функцией show_video_with_frame_range_sum
 
 channels = {0: "red", 2: "green"}
 
@@ -27,26 +27,12 @@ def choose_file():
     path_entry.insert(0, file_path)
 
 
-def make_loop_video(filename):
-    reader = imageio.get_reader(filename)
-    frames = [frame for frame in reader]
-    reader.close()
-    all_frames = frames + frames[::-1]
-    loop_filename = filename.replace('.mp4', '_loop.mp4')
-    writer = imageio.get_writer(loop_filename, fps=25)
-    for frame in all_frames:
-        writer.append_data(frame)
-    writer.close()
-    return loop_filename
-
-
 def run_processing():
     try:
         update_progress(0)
         file_path = path_entry.get()
         file_name = os.path.basename(file_path)
         file_stem = os.path.splitext(file_name)[0]
-
         base_dir = os.path.dirname(file_path)
         output_dir = os.path.join(base_dir, "video_cells", file_stem)
         os.makedirs(output_dir, exist_ok=True)
@@ -59,8 +45,8 @@ def run_processing():
             output_text.insert(tk.END, "Создание обычных видео...\n")
             output_text.see(tk.END)
             process_frames(sdt, k, channels, fps, accumulate=False,
-                           suffix="_обычное", filename_label=file_name,
-                           progress_callback=lambda p: update_progress(p * 0.25),
+                           suffix="обычное", filename_label=file_name,
+                           progress_callback=lambda p: update_progress(p * 0.33),
                            output_dir=output_dir)
             output_text.insert(tk.END, "Обычные видео готовы.\n")
             output_text.see(tk.END)
@@ -69,8 +55,8 @@ def run_processing():
             output_text.insert(tk.END, "Создание видео с накоплением...\n")
             output_text.see(tk.END)
             process_frames(sdt, k, channels, fps, accumulate=True,
-                           suffix="_необычное", filename_label=file_name,
-                           progress_callback=lambda p: update_progress(25 + p * 0.25),
+                           suffix="необычное", filename_label=file_name,
+                           progress_callback=lambda p: update_progress(33 + p * 0.33),
                            output_dir=output_dir)
             output_text.insert(tk.END, "Видео с накоплением готовы.\n")
             output_text.see(tk.END)
@@ -79,27 +65,9 @@ def run_processing():
             output_text.insert(tk.END, "Создание 6-панельного видео...\n")
             output_text.see(tk.END)
             create_six_panel_video((2048, 1536), fps, output_dir,
-                                   progress_callback=lambda p: update_progress(50 + p * 0.25))
+                                   progress_callback=lambda p: update_progress(66 + p * 0.33))
             output_text.insert(tk.END, "6-панельное видео готово.\n")
             output_text.see(tk.END)
-
-        if var_loop.get():
-            output_text.insert(tk.END, "Создание цикличных видео...\n")
-            output_text.see(tk.END)
-            files_to_loop = []
-
-            if var_normal.get():
-                files_to_loop += [f"channel_0_обычное.mp4", f"channel_2_обычное.mp4", f"combined_video_обычное.mp4"]
-            if var_accum.get():
-                files_to_loop += [f"channel_0_необычное.mp4", f"channel_2_необычное.mp4", f"combined_video_необычное.mp4"]
-            if var_sixpanel.get():
-                files_to_loop.append("six_panel_video.mp4")
-
-            for file in files_to_loop:
-                full_path = os.path.join(output_dir, file)
-                looped = make_loop_video(full_path)
-                output_text.insert(tk.END, f"Создано цикличное видео: {looped}\n")
-                output_text.see(tk.END)
 
         output_text.insert(tk.END, f"=== Все задачи завершены ===\nВидео в папке: {output_dir}\n")
         output_text.see(tk.END)
@@ -119,13 +87,23 @@ def start_thread():
     thread.start()
 
 
+def show_frame_range_viewer():
+    file_path = path_entry.get()
+    if not file_path:
+        messagebox.showwarning("Внимание", "Сначала выберите .sdt файл")
+        return
+    sdt = turn_sdt(file_path)
+    viewer.show_video_with_frame_range_sum(sdt)
+
+
 # === GUI ===
 root = tk.Tk()
 root.title("Обработка SDT-видео")
-root.geometry("700x700")
+root.geometry("700x750")
 
 select_file_button = tk.Button(root, text="Выбрать файл", command=choose_file)
 start_button = tk.Button(root, text="Начать обработку", command=start_thread)
+view_button = tk.Button(root, text="Покадровый просмотр", command=show_frame_range_viewer)
 
 path_entry = tk.Entry(root, width=60)
 fps_entry = tk.Entry(root, width=10)
@@ -143,9 +121,9 @@ k2_entry.insert(0, "1")
 var_normal = tk.BooleanVar(value=True)
 var_accum = tk.BooleanVar(value=True)
 var_sixpanel = tk.BooleanVar(value=True)
-var_loop = tk.BooleanVar(value=False)
 open_folder_after = tk.BooleanVar(value=True)
 
+# Расположение
 tk.Label(root, text="FPS:").place(x=20, y=10)
 fps_entry.place(x=60, y=10)
 
@@ -161,10 +139,10 @@ select_file_button.place(x=520, y=36)
 tk.Checkbutton(root, text="Обычные видео", variable=var_normal).place(x=20, y=80)
 tk.Checkbutton(root, text="С накоплением", variable=var_accum).place(x=160, y=80)
 tk.Checkbutton(root, text="6 панелей", variable=var_sixpanel).place(x=300, y=80)
-tk.Checkbutton(root, text="Цикличные видео", variable=var_loop).place(x=400, y=80)
-tk.Checkbutton(root, text="Открыть папку после", variable=open_folder_after).place(x=520, y=80)
+tk.Checkbutton(root, text="Открыть папку после", variable=open_folder_after).place(x=420, y=80)
 
 start_button.place(x=20, y=120)
+view_button.place(x=160, y=120)
 output_text.place(x=20, y=160)
 progress_bar.place(x=20, y=560)
 
